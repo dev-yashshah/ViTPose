@@ -6,6 +6,8 @@ mmpose -oldBak/
 pretrained_weights/
 updated_demo Dont use/
 vis_results/
+*.npz
+*.zip
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
