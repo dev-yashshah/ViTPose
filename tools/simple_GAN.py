@@ -29,7 +29,7 @@ def build_generator():
     generator.add(Dense(units=1024))
     generator.add(LeakyReLU(0.2))
     #the output layer with 784(28x28) nodes
-    generator.add(Dense(units=1 , activation='tanh'))
+    generator.add(Dense(units=3 , activation='tanh'))
     #compiling the generator network with loss and optimizer functions
     generator.compile(loss='binary_crossentropy', optimizer=tf.keras.optimizers.Adam(lr=0.0002, beta_1=0.5))
     return generator
@@ -38,7 +38,7 @@ def build_discriminator():
     #initializing a neural network
     discriminator=Sequential()
     #adding an input layer to the network
-    discriminator.add(Dense(units=1024, input_dim=1))
+    discriminator.add(Dense(units=1024, input_shape = (16,3)))
     #activating the layer with leakyReLU activation function
     discriminator.add(LeakyReLU(0.2))
     #adding a dropout layer to reduce overfitting
@@ -84,7 +84,8 @@ def gan_net(generator, discriminator):
     gan = Model(inp, out)
     #compiling the GAN Network
     gan.compile(loss='binary_crossentropy',optimizer='adam')
-
+    return gan
+    
 #method to plot the images
 
 def plot_images(epoch, generator,dim=(10,10),figsize=(10,10)):
@@ -92,19 +93,18 @@ def plot_images(epoch, generator,dim=(10,10),figsize=(10,10)):
     noise=np.random.normal(loc=0,scale=1,size=[100,100])
     #generate an image for the input noise
     noise=np.random.normal(loc=0,scale=1,size=[100,100])
-  
+    noise=np.random.normal(0, 1, [128, 16, 3])
     #generate an image for the input noise
   
     generated_images=generator.predict(noise)
   
     #reshape the generated image
-    generated_images=generated_images.reshape(100,28,28)
+    #generated_images=generated_images.reshape(100,28,28)
   
     #plot the image
     plt.figure(figsize=figsize)
   
     #plot for each pixel
-  
     for i in range(generated_images.shape[0]):
         
         plt.subplot(dim[0],dim[1],i+1)
@@ -126,40 +126,34 @@ def train(X_train, epochs=5, batch_size=128):
         #tqdm module helps to generate a status bar for training
         for _ in tqdm(range(batch_size)):
             #random noise with size batch_size*4
-            noise=np.random.normal(0, 1, [batch_size*4, 16, 3])
+            noise=np.random.normal(0, 1, [batch_size, 16, 3])
             #print(noise.shape)
             #generating images from noise
             generated_images=generator.predict(noise)
             #taking random images from the training
-            #image_batch=X_train[np.random.randint(low=0,high=X_train.shape[0]
-            #                                     ,size=batch_size)]
             #Choose random action
             subject = random.choice(list(X_train.keys()))
-            #print(subject)
-            #print(X_train[subject])
             action = random.choice(list(X_train[subject].keys()))
 
-            image_batch = X_train[subject][action][:, :batch_size, :, :]
-            image_batch = image_batch.reshape([batch_size*4, 16, 3])
+            image_batch = X_train[subject][action][:batch_size, :, :]
             #creating a new training set with real and fake images
-            print(image_batch.shape)
-            print(generated_images.shape)   #Make them equal
+            #print(image_batch.shape)
+            #print(generated_images.shape)   #Make them equal
             X=np.concatenate([image_batch,generated_images])
-            print(X.shape)
             #labels for generated and real data
-            y_dis=np.zeros((8*batch_size,16,3))
+            y_dis=np.zeros(2*batch_size).reshape((-1,1))
             
             #label for real images
-            y_dis[:batch_size*4,:,:]=1.0
+            y_dis[:batch_size]=1.0
             
             #training the discrminator with real and generated images
             discriminator.trainable=True
             discriminator.train_on_batch(X,y_dis)
       
-            #labelling the generated images a sreal images(1) to trick the discriminator
+            #labelling the generated images as real images(1) to trick the discriminator
       
-            noise=np.random.normal(0, 1, [batch_size*4, 16, 3])
-            y_gen=np.ones((8*batch_size,16,3))
+            noise=np.random.normal(0, 1, [batch_size, 16, 3])
+            y_gen=np.ones(batch_size).reshape((-1,1))
       
             #freezing the weights of the discriminant or while training generator
       
@@ -167,15 +161,15 @@ def train(X_train, epochs=5, batch_size=128):
       
             #training the gan network
       
-            gan.train_on_batch(noise,y_gen)
+            gan.train_on_batch(noise, y_gen)
       
             #plotting the images for every 10 epoch
             if epoch==1 or epoch %10==0:
                 
                 
-                plot_images(epoch,generator,dim=(10,10),figsize=(15,15))
+                plot_images(epoch,generator,dim=(12,12),figsize=(15,15))
 
-def load_ground_truth(file):
+def load_ground_truth(file, cam_number = 4):
     dataset = Human36mDataset(file + '.npz')
     output_2d_poses = {}
     output_3d_poses = {}
@@ -184,24 +178,31 @@ def load_ground_truth(file):
         output_3d_poses[subject] = {}
         for action in dataset[subject].keys():
             anim = dataset[subject][action]
-
-            positions_2d = []
-            positions_3d = []
-            for cam in anim['cameras']:
-                pos_3d = world_to_camera(anim['positions'], R=cam['orientation'], t=cam['translation'])
-                positions_3d.append(pos_3d)
-                pos_2d = wrap(project_to_2d, True, pos_3d, cam['intrinsic'])
-                pos_2d_pixel_space = image_coordinates(pos_2d, w=cam['res_w'], h=cam['res_h'])
-                positions_2d.append(pos_2d_pixel_space.astype('float32'))
+            if cam_number ==4:
+                positions_2d = []
+                positions_3d = []
+                for cam in anim['cameras']:
+                    pos_3d = world_to_camera(anim['positions'], R=cam['orientation'], t=cam['translation'])
+                    positions_3d.append(pos_3d)
+                    pos_2d = wrap(project_to_2d, True, pos_3d, cam['intrinsic'])
+                    pos_2d_pixel_space = image_coordinates(pos_2d, w=cam['res_w'], h=cam['res_h'])
+                    positions_2d.append(pos_2d_pixel_space.astype('float32'))
+            else:
+                positions_2d = []
+                positions_3d = world_to_camera(anim['positions'], R=anim['cameras'][cam_number]['orientation'], t=anim['cameras'][cam_number]['translation'])
+                pos_2d = wrap(project_to_2d, True, positions_3d, anim['cameras'][cam_number]['intrinsic'])
+                pos_2d_pixel_space = image_coordinates(pos_2d, w=anim['cameras'][cam_number]['res_w'], h=anim['cameras'][cam_number]['res_h'])
+                positions_2d = pos_2d_pixel_space.astype('float32')
             output_2d_poses[subject][action] = np.array(positions_2d)
             output_3d_poses[subject][action] = np.array(positions_3d)
     return output_2d_poses, output_3d_poses
 
 def main():
-    gt_2d, gt_3d = load_ground_truth("../data/data_3d_h36m")
+    print("Extracting Ground Truth")
+    gt_2d, gt_3d = load_ground_truth("../data/data_3d_h36m", cam_number = 0) # There are 4 caliberated camera use 4 if you want to use all cameras
     X_train = gt_3d.copy()
-    #print(X_train.items())
-    #print(X_train.shape)
+    print("Ground truth Extracted")
+    print("Training")
     train(X_train,epochs=5,batch_size=128)
 
 if __name__ == "__main__":
