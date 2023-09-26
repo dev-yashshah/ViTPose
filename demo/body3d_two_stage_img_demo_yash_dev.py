@@ -6,10 +6,9 @@ import warnings
 from argparse import ArgumentParser
 
 import cv2
-import mmcv
 import numpy as np
 
-from mmpose.apis import (collect_multi_frames, extract_pose_sequence,
+from mmpose.apis import (extract_pose_sequence,
                          get_track_id, inference_pose_lifter_model,
                          inference_top_down_pose_model, init_pose_model,
                          process_mmdet_results, vis_3d_pose_result)
@@ -24,7 +23,8 @@ try:
 except (ImportError, ModuleNotFoundError):
     has_mmdet = False
 
-import progressbar
+from progressbar import progressbar
+import json
 
 def convert_keypoint_definition(keypoints, pose_det_dataset,
                                 pose_lift_dataset):
@@ -173,37 +173,43 @@ def convert_keypoint_definition(keypoints, pose_det_dataset,
 
 def main():
     parser = ArgumentParser()
+    parser.add_argument('--img-root', type=str, default=r"F:\ViTPose\ViTPose\test_img\images")
     parser.add_argument('--det_config', 
-        default='mmdet/configs/faster_rcnn_r50_fpn_coco.py',
+        #default='mmdet/configs/faster_rcnn_r50_fpn_coco.py',
+        default='demo/mmdetection_cfg/'
+        'ssdlite_mobilenetv2_scratch_600e_coco.py',
         help='Config file for detection')
     parser.add_argument('--det_checkpoint', 
-        default='mmdet/pretrained_weights/faster_rcnn_r50_fpn_1x_coco_20200130-047c8118.pth', 
+        #default='mmdet/pretrained_weights/faster_rcnn_r50_fpn_1x_coco_20200130-047c8118.pth', 
+        default='https://download.openmmlab.com/mmdetection/v2.0/ssd/'
+        'ssdlite_mobilenetv2_scratch_600e_coco/ssdlite_mobilenetv2_'
+        'scratch_600e_coco_20210629_110627-974d9307.pth',
         help='Checkpoint file for detection')
     parser.add_argument(
         '--pose_detector_config',
         type=str,
-        default='configs/body/2d_kpt_sview_rgb_img/topdown_heatmap/crowdpose/ViTPose_huge_crowdpose_256x192.py',
+        default='configs/body/2d_kpt_sview_rgb_img/topdown_heatmap/crowdpose/ViTPose_base_crowdpose_256x192.py',
+        #default='configs/body/2d_kpt_sview_rgb_img/topdown_heatmap/crowdpose/ViTPose_huge_crowdpose_256x192.py',
         #default='configs/body/2d_kpt_sview_rgb_img/topdown_heatmap/coco/hrnet_w48_coco_256x192.py',
         help='Config file for the 1st stage 2D pose detector')
     parser.add_argument(
         '--pose_detector_checkpoint',
         type=str,
-        default='pretrained_weights/vitpose-h-multi-crowdpose.pth',
+        #default='pretrained_weights/vitpose-h-multi-crowdpose.pth',
+        default='pretrained_weights/vitpose-b-multi-crowdpose.pth',
         #default='pretrained_weights/hrnet_w48_coco_256x192-b9e0b3ab_20200708.pth',
         help='Checkpoint file for the 1st stage 2D pose detector')
     parser.add_argument(
         '--pose_lifter_config', 
-        #default='configs/body/3d_kpt_sview_rgb_vid/video_pose_lift/h36m/videopose3d_h36m_243frames_fullconv_supervised_cpn_ft.py',
-        default='configs/body/3d_kpt_sview_rgb_img/pose_lift/h36m/simplebaseline3d_h36m.py',
+        default='configs/body/3d_kpt_sview_rgb_vid/video_pose_lift/h36m/videopose3d_h36m_243frames_fullconv_supervised_cpn_ft.py',
         help='Config file for the 2nd stage pose lifter model')
     parser.add_argument(
         '--pose_lifter_checkpoint',
-        default='configs/body/3d_kpt_sview_rgb_img/pose_lift/h36m/simple3Dbaseline_h36m-f0ad73a4_20210419.pth',
+        default='configs/body/3d_kpt_sview_rgb_vid/video_pose_lift/h36m/videopose_h36m_243frames_fullconv_supervised_cpn_ft-88f5abbb_20210527.pth',
         help='Checkpoint file for the 2nd stage pose lifter model')
     parser.add_argument(
-        '--img-path', type=str, default='', help='Image folder')
-    parser.add_argument(
         '--rebase-keypoint-height',
+        default=True,
         action='store_true',
         help='Rebase the predicted 3D pose so its lowest keypoint has a '
         'height of 0 (landing on the ground). This is useful for '
@@ -232,7 +238,8 @@ def main():
         '--out-img-root',
         type=str,
         default='vis_results',
-        help='Root of the output image file.')
+        help='Root of the output image file. '
+        'Default not saving the visualization image.')
     parser.add_argument(
         '--device', default='cuda:0', help='Device for inference')
     parser.add_argument(
@@ -271,17 +278,34 @@ def main():
         default='configs/_base_/filters/one_euro.py',
         help='Config file of the filter to smooth the pose estimation '
         'results. See also --smooth.')
+    parser.add_argument(
+        '--use-multi-frames',
+        action='store_true',
+        default=False,
+        help='whether to use multi frames for inference in the 2D pose'
+        'detection stage. Default: False.')
+    parser.add_argument(
+        '--online',
+        action='store_true',
+        default=False,
+        help='inference mode. If set to True, can not use future frame'
+        'information when using multi frames for inference in the 2D pose'
+        'detection stage. Default: False.')
 
     assert has_mmdet, 'Please install mmdet to run the demo.'
 
     args = parser.parse_args()
+    assert args.show or (args.out_img_root != '')
     assert args.det_config is not None
     assert args.det_checkpoint is not None
 
-    # First stage: 2D pose detection
-    print('Stage 1: 2D pose detection.')
+    img_path=os.listdir(args.img_root)
 
-    print('Initializing model...')
+    assert len(img_path)>0, f'Failed to load images from {args.img_root}'
+
+
+    #First Stage: Load Models
+    print("Loading Model for 2D Pose Detection...")
     person_det_model = init_detector(
         args.det_config, args.det_checkpoint, device=args.device.lower())
 
@@ -292,6 +316,11 @@ def main():
 
     assert isinstance(pose_det_model, TopDown), 'Only "TopDown"' \
         'model is supported for the 1st stage (2D pose detection)'
+
+    # frame index offsets for inference, used in multi-frame inference setting
+    if args.use_multi_frames:
+        assert 'frame_indices_test' in pose_det_model.cfg.data.test.data_cfg
+        indices = pose_det_model.cfg.data.test.data_cfg['frame_indices_test']
 
     pose_det_dataset = pose_det_model.cfg.data['test']['type']
     # get datasetinfo
@@ -304,7 +333,9 @@ def main():
     else:
         dataset_info = DatasetInfo(dataset_info)
 
-    pose_det_results_list = []
+    #initialize Variables for Stage 1
+    print('Initializing Variables: Stage 1')
+
     next_id = 0
     pose_det_results = []
 
@@ -314,37 +345,9 @@ def main():
     # return the output of some desired layers,
     # e.g. use ('backbone', ) to return backbone feature
     output_layer_names = None
+    
 
-    print('Running 2D pose detection inference...')
-    files=os.listdir(args.img_path)
-    for i in progressbar.progressbar(range(len(files))):
-        pose_det_results_last = pose_det_results
-        img=cv2.imread(osp.join(args.img_path,files[i]))
-        # test a single image, the resulting box is (x1, y1, x2, y2)
-        mmdet_results = inference_detector(person_det_model, img)
-
-        # keep the person class bounding boxes.
-        person_det_results = process_mmdet_results(mmdet_results,
-                                                   args.det_cat_id)
-        
-        # make person results for current image
-        pose_det_results, _ = inference_top_down_pose_model(
-            pose_det_results_last,
-            img,
-            person_det_results,
-            bbox_thr=args.bbox_thr,
-            format='xyxy',
-            dataset=pose_det_dataset,
-            dataset_info=dataset_info,
-            return_heatmap=return_heatmap,
-            outputs=output_layer_names)
-
-        pose_det_results_list.append(copy.deepcopy(pose_det_results))
-
-    # Second stage: Pose lifting
-    print('Stage 2: 2D-to-3D pose lifting.')
-
-    print('Initializing model...')
+    print('Loading Model for 3D Pose Lifter...')
     pose_lift_model = init_pose_model(
         args.pose_lifter_config,
         args.pose_lifter_checkpoint,
@@ -357,13 +360,6 @@ def main():
 
     
     os.makedirs(args.out_img_root, exist_ok=True)
-
-    # convert keypoint definition
-    for pose_det_results in pose_det_results_list:
-        for res in pose_det_results:
-            keypoints = res['keypoints']
-            res['keypoints'] = convert_keypoint_definition(
-                keypoints, pose_det_dataset, pose_lift_dataset)
 
     # load temporal padding config from model.data_cfg
     if hasattr(pose_lift_model.cfg, 'test_data_cfg'):
@@ -391,34 +387,66 @@ def main():
     else:
         pose_lift_dataset_info = DatasetInfo(pose_lift_dataset_info)
     
-    print('Running 2D-to-3D pose lifting inference...')
-    for i, pose_det_results in enumerate(
-            mmcv.track_iter_progress(pose_det_results_list)):
+    #Run frames through stage 1 and 2
+    winName="frame"
+    for _img in progressbar(range(len(img_path))):
+        cur_frame=cv2.imread(osp.join(args.img_root,img_path[_img]))
+        #print('Running 2D pose detection inference...')
+        pose_det_results_last = pose_det_results
+
+        # test a single image, the resulting box is (x1, y1, x2, y2)
+        mmdet_results = inference_detector(person_det_model, cur_frame)
+
+        # keep the person class bounding boxes.
+        person_det_results = process_mmdet_results(mmdet_results,
+                                                   args.det_cat_id)
+        
+        # make person results for current image
+        pose_det_results, _ = inference_top_down_pose_model(
+            pose_det_model,
+            cur_frame,
+            person_det_results,
+            bbox_thr=args.bbox_thr,
+            format='xyxy',
+            dataset=pose_det_dataset,
+            dataset_info=dataset_info,
+            return_heatmap=return_heatmap,
+            outputs=output_layer_names)
+
+        # get track id for each person instance
+        pose_det_results, next_id = get_track_id(
+            pose_det_results,
+            pose_det_results_last,
+            next_id,
+            use_oks=args.use_oks_tracking,
+            tracking_thr=args.tracking_thr)
+        
+        # convert keypoint definition
+        for res in pose_det_results:
+            keypoints = res['keypoints']
+            res['keypoints'] = convert_keypoint_definition(
+                keypoints, pose_det_dataset, pose_lift_dataset)
         # extract and pad input pose2d sequence
-        img=cv2.imread(osp.join(args.img_path,files[i]))
         pose_results_2d = extract_pose_sequence(
-            pose_det_results_list,
-            frame_idx=i,
+            [pose_det_results],
+            frame_idx=0,
             causal=data_cfg.causal,
             seq_len=data_cfg.seq_len,
             step=data_cfg.seq_frame_interval)
-
-        # smooth 2d results
-        if smoother:
-            pose_results_2d = smoother.smooth(pose_results_2d)
 
         # 2D-to-3D pose lifting
         pose_lift_results = inference_pose_lifter_model(
             pose_lift_model,
             pose_results_2d=pose_results_2d,
-            dataset=pose_lift_dataset,
+            dataset=pose_lift_dataset,  #Body3DH36MDataset
             dataset_info=pose_lift_dataset_info,
-            with_track_id=False,
-            image_size=[img.shape[1],img.shape[0]],
+            with_track_id=True,
+            image_size=(cur_frame.shape[1],cur_frame.shape[0]),
             norm_pose_2d=args.norm_pose_2d)
-
+        
         # Pose processing
         pose_lift_results_vis = []
+        kps_list=[]
         for idx, res in enumerate(pose_lift_results):
             keypoints_3d = res['keypoints_3d']
             # exchange y,z-axis, and then reverse the direction of x,z-axis
@@ -432,31 +460,40 @@ def main():
             res['keypoints_3d'] = keypoints_3d
             # add title
             det_res = pose_det_results[idx]
-            instance_id = 0 #det_res['track_id']
+            instance_id = det_res['track_id']
             res['title'] = f'Prediction ({instance_id})'
             # only visualize the target frame
             res['keypoints'] = det_res['keypoints']
             res['bbox'] = det_res['bbox']
             res['track_id'] = instance_id
+            kps_list.append(res)
             pose_lift_results_vis.append(res)
-
+            
         # Visualization
         if num_instances < 0:
             num_instances = len(pose_lift_results_vis)
-        
-        img_vis = vis_3d_pose_result(
+
+        img_vis =   vis_3d_pose_result(
             pose_lift_model,
             result=pose_lift_results_vis,
-            img=cv2.imread(osp.join(args.img_path,files[i])),
+            img=cur_frame,
             dataset=pose_lift_dataset,
             dataset_info=pose_lift_dataset_info,
             out_file=None,
             radius=args.radius,
             thickness=args.thickness,
             num_instances=num_instances,
-            show=args.show)
+            show=args.show,
+            vis_height=cur_frame.shape[0])
+    
+        for items in kps_list:
+            for k in items:
+                if isinstance(items[k],np.ndarray):
+                    items[k] = items[k].tolist()
 
-        cv2.imwrite(osp.join(args.out_img_root,f'vis_{files[i]}'),img_vis)
+        with open(osp.join(args.out_img_root,"Keypoints_"+img_path[_img].split(".")[0]+".json"),"w+") as writer:
+            writer.writelines(json.dumps(kps_list, indent=4))
+        cv2.imwrite(osp.join(args.out_img_root,"vis_"+img_path[_img]),img_vis)
 
 if __name__ == '__main__':
     main()

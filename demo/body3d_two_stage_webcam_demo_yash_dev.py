@@ -272,22 +272,9 @@ def main():
     parser.add_argument(
         '--smooth-filter-cfg',
         type=str,
-        default='configs/_base_/filters/one_euro.py',
+        default='configs/_base_/filters/gaussian.py',
         help='Config file of the filter to smooth the pose estimation '
         'results. See also --smooth.')
-    parser.add_argument(
-        '--use-multi-frames',
-        action='store_true',
-        default=False,
-        help='whether to use multi frames for inference in the 2D pose'
-        'detection stage. Default: False.')
-    parser.add_argument(
-        '--online',
-        action='store_true',
-        default=False,
-        help='inference mode. If set to True, can not use future frame'
-        'information when using multi frames for inference in the 2D pose'
-        'detection stage. Default: False.')
 
     assert has_mmdet, 'Please install mmdet to run the demo.'
 
@@ -316,11 +303,6 @@ def main():
 
     assert isinstance(pose_det_model, TopDown), 'Only "TopDown"' \
         'model is supported for the 1st stage (2D pose detection)'
-
-    # frame index offsets for inference, used in multi-frame inference setting
-    if args.use_multi_frames:
-        assert 'frame_indices_test' in pose_det_model.cfg.data.test.data_cfg
-        indices = pose_det_model.cfg.data.test.data_cfg['frame_indices_test']
 
     pose_det_dataset = pose_det_model.cfg.data['test']['type']
     # get datasetinfo
@@ -403,11 +385,11 @@ def main():
 
         # test a single image, the resulting box is (x1, y1, x2, y2)
         mmdet_results = inference_detector(person_det_model, cur_frame)
-
+        
         # keep the person class bounding boxes.
         person_det_results = process_mmdet_results(mmdet_results,
                                                    args.det_cat_id)
-        
+
         # make person results for current image
         pose_det_results, _ = inference_top_down_pose_model(
             pose_det_model,
@@ -441,7 +423,10 @@ def main():
             causal=data_cfg.causal,
             seq_len=data_cfg.seq_len,
             step=data_cfg.seq_frame_interval)
-
+        
+        if smoother:
+            pose_results_2d = smoother.smooth(pose_results_2d)
+        
         # 2D-to-3D pose lifting
         pose_lift_results = inference_pose_lifter_model(
             pose_lift_model,

@@ -504,7 +504,6 @@ def main():
                     fps, (img_vis.shape[1], img_vis.shape[0]))
             writer.write(img_vis)
 
-        
     if save_out_video:
         writer.release()
         
