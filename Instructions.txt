@@ -1,0 +1,58 @@
+To activate the Virtual environment:
+    Using python 3.7.0
+    Change the default python path in pyvenv.cfg in ViTPose/venv to the path of your installed python.
+    Run -> cmd
+    cd to venv folder
+    cd venv/Scripts
+    activate
+
+Testing:
+For custom image out of the internet without a json file to define the bounding box use:
+	2D pose detection only
+	Note: Works only for one human since b_box is not defined.
+		python demo/top_down_img_demo_full_frame_without_det_yash.py configs/body/2d_kpt_sview_rgb_img/topdown_heatmap/coco/ViTPose_huge_coco_256x192.py pretrained_weights/vitpose-h.pth --img-path test_img/images --out-img-root vis_results
+
+	Development version:
+		python demo/top_down_img_demo_full_frame_without_det_yash_dev.py mmdet/configs/yolov3_mobilenetv2_320_300e_coco.py mmdet/pretrained_weights/yolov3_mobilenetv2_320_300e_coco_20210719_215349-d18dff72.pth configs/body/2d_kpt_sview_rgb_img/topdown_heatmap/coco/ViTPose_huge_coco_256x192.py pretrained_weights/vitpose-h.pth --img-path test_img/images --out-img-root vis_results
+		python demo/top_down_img_demo_full_frame_without_det_yash_dev.py mmdet/configs/yolov3_mobilenetv2_320_300e_coco.py mmdet/pretrained_weights/yolov3_mobilenetv2_320_300e_coco_20210719_215349-d18dff72.pth configs/body/2d_kpt_sview_rgb_img/topdown_heatmap/crowdpose/ViTPose_huge_crowdpose_256x192.py pretrained_weights/vitpose-h-multi-crowdpose.pth --img-path test_img/images --out-img-root vis_results
+
+To visualize keypoints in 3d from File, run python demo/keypoints2vis.py
+
+To get 3d pose from a video:
+	python demo/body3d_two_stage_video_demo_yash.py --video-path test_vid/2.mp4 --out-video-root vis_results --rebase-keypoint-height
+
+To get 3d pose from image	
+	python demo/body3d_two_stage_img_demo_yash_dev.py --img-path test_img/images --out-img-root vis_results --rebase-keypoint-height
+
+To get 3d pose from a webcam:
+	python demo\body3d_two_stage_webcam_demo_yash_dev.py
+
+TODO: 
+    Improve To get 3d pose from image
+	Remove unidentified keypoints from 3d visualization in webcam
+
+
+CHANGELOG:
+change nccl to gloo in configs\_base_\default_runtime.py for it to work on windows
+--TODO
+
+TRAING & TESTING
+bash tools/dist_train.sh configs/body/2d_kpt_sview_rgb_img/topdown_heatmap/coco/ViTPose_huge_coco_256x192.py 1 --cfg-options model.pretrained=pretrained_weights/vitpose_large_coco_aic_mpii.pth --seed 0
+
+bash tools/dist_test.sh configs/body/2d_kpt_sview_rgb_img/topdown_heatmap/coco/ViTPose_huge_coco_256x192.py pretrained_weights/vitpose_large_coco_aic_mpii.pth 1
+
+
+NOTES:
+if dataset == 'Body3DH36MDataset':
+            skeleton = [[0, 1], [1, 2], [2, 3], [0, 4], [4, 5], [5, 6], [0, 7],
+                        [7, 8], [8, 9], [9, 10], [8, 11], [11, 12], [12, 13],
+                        [8, 14], [14, 15], [15, 16]]
+
+            pose_kpt_color = palette[[
+                9, 0, 0, 0, 16, 16, 16, 9, 9, 9, 9, 16, 16, 16, 0, 0, 0
+            ]]
+            pose_link_color = palette[[
+                0, 0, 0, 16, 16, 16, 9, 9, 9, 9, 16, 16, 16, 0, 0, 0
+            ]]
+https://stackoverflow.com/questions/69154914/calculating-angles-of-body-skeleton-in-video-using-openpose
+https://github.com/open-mmlab/mmpose/issues/1978	#converting from camera to world system
