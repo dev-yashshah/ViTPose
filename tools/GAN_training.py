@@ -594,7 +594,8 @@ class GANTrainer(object):
 
 
 def main():
-    gan_filter = GAN()
+    gan_filter = GANTrainer()
+    gan_filter.
     print('Hello world')
 
 main()
