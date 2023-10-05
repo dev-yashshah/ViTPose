@@ -51,21 +51,21 @@ if __name__ == '__main__':
         output = {}
 
         import h5py
-
         for subject in subjects:
             output[subject] = {}
             #print(os.listdir())
             file_list = glob('h36m/' + subject + '/MyPoses/3D_positions/*.h5')
+            
             assert len(file_list) == 30, "Expected 30 files for subject " + subject + ", got " + str(len(file_list))
             for f in file_list:
                 action = os.path.splitext(os.path.basename(f))[0]
 
                 if subject == 'S11' and action == 'Directions':
                     continue  # Discard corrupted video
-
+                
                 with h5py.File(f) as hf:
                     print(hf["3D_positions"])
-                    positions = hf['3D_positions'].value.reshape(32, 3, -1).transpose(2, 0, 1)
+                    positions = hf.get('3D_positions')[()].reshape(32, 3, -1).transpose(2, 0, 1)
                     positions /= 1000  # Meters instead of millimeters
                     output[subject][action] = positions.astype('float32')
 

@@ -34,12 +34,14 @@ class GAN:
         gen.add(tf.keras.Input(shape=(128,)))
 
         gen.add(Dense(16))
-        gen.add(LeakyReLU(0.6))
+        gen.add(BatchNormalizationV2())
+        gen.add(LeakyReLU(0.2))
 
         gen.add(Dense(16*2))
-        gen.add(LeakyReLU(0.6))
+        gen.add(BatchNormalizationV2())
+        gen.add(LeakyReLU(0.2))
 
-        gen.add(Dense(units=16*3, activation= 'linear'))
+        gen.add(Dense(units=16*3, activation= 'tanh'))
         
         gen.compile(loss='binary_crossentropy', optimizer=tf.keras.optimizers.Adam(learning_rate=0.002, beta_1=0.5))
         return gen
@@ -90,7 +92,7 @@ class GAN:
         plt.show()
 
     def gan_net(self, generator, discriminator):
-        discriminator.trainable=False
+        #discriminator.trainable=False
         inp = Input(shape=(128,))
         X=generator(inp)
         #feeds the output from generator (X) to the discriminator and stores the results in out
@@ -105,7 +107,6 @@ class GAN:
         generator = self.generator()
         discriminator = self.discriminator()
         gan = self.gan_net(generator, discriminator)
-        loss = tf.keras.losses.BinaryCrossentropy()
         for epoch in range (1, epochs+1):
             print("###### @ Epoch",epoch)
             for _ in tqdm(range(batch_size)):
@@ -121,23 +122,18 @@ class GAN:
                 discriminator.trainable = True
                 #Real Data
                 y_dis=np.ones(batch_size)
-                real_loss = loss(y_dis, discriminator.predict(X_batch))
+                real_loss = discriminator.train_on_batch(X_batch, y_dis)
                 
                 #Fake Data
                 y_dis = np.zeros(batch_size)
-                fake_loss = loss(y_dis, discriminator.predict(generated_numbers))
+                fake_loss = discriminator.train_on_batch(generated_numbers, y_dis)
+                #X = np.concatenate([X_batch, generated_numbers])
+                #y_dis=np.zeros(2*batch_size)
 
-                total_loss = real_loss + fake_loss
+                #y_dis[:batch_size]=1.0
 
-                X = np.concatenate([X_batch, generated_numbers])
-                y_dis=np.zeros(2*batch_size)
-
-                y_dis[:batch_size]=1.0
-
-                discriminator.trainable=True
-                discriminator.train_on_batch(X, y_dis)
-
-
+                #discriminator.trainable=True
+                #discriminator.train_on_batch(X, y_dis)
                 noise=np.random.normal(0, 1, [batch_size, batch_size])
                 y_gen=np.ones(batch_size)
 
